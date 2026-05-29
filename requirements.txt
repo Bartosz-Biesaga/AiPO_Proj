@@ -1,0 +1,7 @@
+ultralytics>=8.3.0
+opencv-python>=4.6.0
+easyocr>=1.7.1
+torch
+torchvision
+pillow>=10.0.0
+pandas>=1.1.4

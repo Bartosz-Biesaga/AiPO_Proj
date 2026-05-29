@@ -1,0 +1,17 @@
+# Środowiska wirtualne
+venv/
+.venv/
+env/
+
+# Środowiska IDE
+.idea/
+.vscode/
+
+# Pliki tymczasowe Pythona
+__pycache__/
+*.pyc
+*.pyo
+
+# Wyniki działania programu
+results/*
+!results/.gitkeep
