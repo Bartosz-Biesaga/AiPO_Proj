@@ -5,12 +5,9 @@ import torch
 from ultralytics import YOLO
 
 
-# Przywrócona oryginalna sygnatura funkcji (GUI już nie będzie wyrzucać błędu!)
 def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.25, iou=0.7, save_prediction=False):
-    # Wykorzystanie parametrów z GUI
     result = yolo(image, conf=confidence, iou=iou, verbose=False)[0]
 
-    # Przywrócona logika zapisu predykcji dla GUI
     if save_prediction is True:
         dir_path = os.path.dirname(os.path.realpath(__file__))
         save_path = os.path.join(dir_path, "..", "results", "prediction.jpg")
@@ -20,7 +17,6 @@ def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.
     cars = []
     plates = []
 
-    # --- NOWA, BEZBŁĘDNA LOGIKA CIĘCIA I PADDINGU ---
     for box, cls in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.cls.cpu().numpy()):
         x1, y1, x2, y2 = map(int, box)
 
@@ -29,7 +25,6 @@ def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.
         else:  # Tablica
             w, h = x2 - x1, y2 - y1
 
-            # Bezpieczny margines (padding), żeby nie ucinać wierzchołków
             pad_x = int(w * 0.06)
             pad_top = int(h * 0.12)
             pad_bot = int(h * 0.05)
@@ -41,7 +36,6 @@ def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.
 
             plates.append({"img": image[ny1:ny2, nx1:nx2], "box": [x1, y1, x2, y2]})
 
-    # --- NOWA LOGIKA PAROWANIA TABLIC Z AUTAMI ---
     pairs = []
     assigned_plates = set()
 
@@ -54,14 +48,12 @@ def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.
             plate_center_x = (px1 + px2) / 2
             plate_center_y = (py1 + py2) / 2
 
-            # Sprawdzamy czy środek tablicy jest fizycznie wewnątrz prostokąta auta
             if cx1 <= plate_center_x <= cx2 and cy1 <= plate_center_y <= cy2:
                 car_plates.append(plate["img"])
                 assigned_plates.add(i)
 
         pairs.append([car["img"], car_plates])
 
-    # Obsługa "sierot" (tablic bez aut)
     orphan_plates = [p["img"] for i, p in enumerate(plates) if i not in assigned_plates]
     if orphan_plates:
         pairs.append([None, orphan_plates])
