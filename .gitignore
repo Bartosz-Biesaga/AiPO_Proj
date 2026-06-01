@@ -15,3 +15,8 @@ __pycache__/
 # Wyniki działania programu
 results/*
 !results/.gitkeep
+
+# zbiory danych
+test_datasets/*
+!test_datasets/.gitkeep
+ufpr/*
