@@ -1,32 +1,33 @@
 import os
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-from collections import Counter
-from ultralytics import YOLO
-import xml.etree.ElementTree as ET
-from main.recognition import load_model, process_license_plate
-from main.YOLO_utils import crop_boxes_from_image
 import random
 
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xml.etree.ElementTree as ET
+from collections import Counter
+from rapidfuzz.distance import Levenshtein
+from ultralytics import YOLO
+
+from main.recognition import load_model, process_license_plate
+from main.YOLO_utils import crop_boxes_from_image
 
 # https://www.kaggle.com/datasets/saisirishan/indian-vehicle-dataset/data?select=State-wise_OLX
 # https://www.kaggle.com/datasets/piotrstefaskiue/poland-vehicle-license-plate-dataset/data
-
-
-
-# konfiguracja
 
 INDIAN_PATH = "test_datasets/indian_dataset"
 POLAND_PATH = "test_datasets/polish_dataset"
 
 YOLO_MODEL_PATH = "models/YOLO/weights/best.pt"
-
 RESULTS_DIR = "test/results/text_recognition"
 
 MAX_IMAGES = 50
-
 RANDOM_SEED = 42
+
+yolo = YOLO(YOLO_MODEL_PATH)
+reader, _ = load_model()
+
 
 def sample_dataset(data, max_images=MAX_IMAGES, seed=RANDOM_SEED):
     data = list(data)
@@ -34,11 +35,10 @@ def sample_dataset(data, max_images=MAX_IMAGES, seed=RANDOM_SEED):
     rng.shuffle(data)
     return data[:max_images]
 
-yolo = YOLO(YOLO_MODEL_PATH)
-reader, _ = load_model()
 
+def normalize_plate(text):
+    return text.replace(" ", "").upper()
 
-# XML parser
 
 def parse_indian_xml(xml_path):
     tree = ET.parse(xml_path)
@@ -46,15 +46,12 @@ def parse_indian_xml(xml_path):
 
     filename = root.find("filename").text
     obj = root.find("object")
-
     if obj is None:
         return None
 
     gt = obj.find("name").text.strip()
     return filename, gt
 
-
-# ładowanie datasetu
 
 def load_indian(dataset_path):
     data = []
@@ -73,11 +70,9 @@ def load_poland(dataset_path):
     root = tree.getroot()
 
     data = []
-
     for img in root.findall("image"):
         filename = img.attrib["name"]
         box = img.find("box")
-
         if box is None:
             continue
 
@@ -86,108 +81,172 @@ def load_poland(dataset_path):
             continue
 
         gt = attr.text.strip()
-
         img_path = os.path.join(dataset_path, "photos", filename)
         data.append((img_path, gt.strip().upper()))
 
     return data
 
 
-# metryki
-
 def cer(gt, pred):
-    if len(gt) == 0:
-        return 1.0 if len(pred) > 0 else 0.0
-
-    dp = np.zeros((len(gt)+1, len(pred)+1))
-
-    for i in range(len(gt)+1):
-        dp[i][0] = i
-    for j in range(len(pred)+1):
-        dp[0][j] = j
-
-    for i in range(1, len(gt)+1):
-        for j in range(1, len(pred)+1):
-            cost = 0 if gt[i-1] == pred[j-1] else 1
-            dp[i][j] = min(
-                dp[i-1][j] + 1,
-                dp[i][j-1] + 1,
-                dp[i-1][j-1] + cost
-            )
-
-    return dp[-1][-1] / max(len(gt), 1)
+    gt_n = normalize_plate(gt)
+    pred_n = normalize_plate(pred)
+    if len(gt_n) == 0:
+        return 1.0 if len(pred_n) > 0 else 0.0
+    return Levenshtein.distance(gt_n, pred_n) / len(gt_n)
 
 
-# OCR 
+def build_same_length_confusion_matrix(pairs):
+    confusion_matrix = Counter()
+    subset_count = 0
+
+    for gt, pred in pairs:
+        gt_n = normalize_plate(gt)
+        pred_n = normalize_plate(pred)
+        if len(gt_n) == 0 or len(gt_n) != len(pred_n):
+            continue
+
+        subset_count += 1
+        for g, p in zip(gt_n, pred_n):
+            if g != p:
+                confusion_matrix[(g, p)] += 1
+
+    return confusion_matrix, subset_count
+
+
+def plot_confusion_matrix(confusion_matrix, path, title):
+    chars = sorted({c for pair in confusion_matrix for c in pair})
+    idx = {c: i for i, c in enumerate(chars)}
+    matrix = np.zeros((len(chars), len(chars)))
+
+    for (g, p), count in confusion_matrix.items():
+        matrix[idx[g], idx[p]] = count
+
+    fig, ax = plt.subplots(figsize=(max(8, len(chars) * 0.45), max(6, len(chars) * 0.45)))
+    im = ax.imshow(matrix, interpolation="nearest")
+    ax.set_xticks(range(len(chars)))
+    ax.set_yticks(range(len(chars)))
+    ax.set_xticklabels(chars)
+    ax.set_yticklabels(chars)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Ground truth")
+    ax.set_title(title)
+    plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
+
+def plot_error_histogram(pairs, path, title):
+    distances = [
+        Levenshtein.distance(normalize_plate(gt), normalize_plate(pred))
+        for gt, pred in pairs
+    ]
+
+    plt.figure(figsize=(8, 5))
+    if distances:
+        max_err = max(distances)
+        bins = np.arange(0, max_err + 2) - 0.5
+        plt.hist(distances, bins=bins, edgecolor="black", alpha=0.75)
+        plt.xticks(range(0, max_err + 1))
+    plt.xlabel("Edit distance (character errors)")
+    plt.ylabel("Frequency")
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
+    return distances
+
 
 def run_eval(dataset, name="dataset", seed=RANDOM_SEED):
     exact = 0
     cers = []
+    detected = 0
+    read = 0
     total = 0
-    char_conf = Counter()
+    pairs = []
 
     sampled = sample_dataset(dataset, MAX_IMAGES, seed)
 
     for img_path, gt in sampled:
-
         img = cv2.imread(img_path)
         if img is None:
             continue
 
-        pairs = crop_boxes_from_image(yolo, img)
+        crop_pairs = crop_boxes_from_image(yolo, img)
         read_plates = []
-        for _, plate_imgs in pairs:
+        plates_found = False
+
+        for _, plate_imgs in crop_pairs:
             for plate_img in plate_imgs:
+                plates_found = True
                 text = process_license_plate(image=plate_img, model=reader)
                 if text not in ("[BRAK ODCZYTU]", "[PROCESSING ERROR]"):
                     read_plates.append(text)
+
         pred = read_plates[0] if read_plates else ""
-
         total += 1
+        pairs.append((gt, pred))
 
+        if plates_found:
+            detected += 1
+        if pred:
+            read += 1
         if pred == gt:
             exact += 1
 
         cers.append(cer(gt, pred))
-
-        for g, p in zip(gt, pred):
-            if g != p:
-                char_conf[(g, p)] += 1
-
         print(f"[{name}] GT:{gt} PRED:{pred}")
 
     acc = exact / max(total, 1)
-    mean_cer = np.mean(cers)
+    mean_cer = float(np.mean(cers)) if cers else 0.0
+    detection_rate = detected / max(total, 1)
+    plate_read_rate = read / max(total, 1)
 
     print("\n======================")
     print(name)
     print("======================")
     print("Accuracy:", acc)
     print("CER:", mean_cer)
+    print("Detection rate:", detection_rate)
+    print("Plate read rate:", plate_read_rate)
 
-    return acc, mean_cer, cers, char_conf
+    return {
+        "dataset": name,
+        "accuracy": acc,
+        "cer": mean_cer,
+        "detection_rate": detection_rate,
+        "plate_read_rate": plate_read_rate,
+        "n_samples": total,
+        "pairs": pairs,
+    }
 
+
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 indian = load_indian(INDIAN_PATH)
 poland = load_poland(POLAND_PATH)
 
-acc_i, cer_i, _, _ = run_eval(indian, "INDIA")
-acc_p, cer_p, _, _ = run_eval(poland, "POLAND")
+results_india = run_eval(indian, "INDIA", seed=RANDOM_SEED)
+results_poland = run_eval(poland, "POLAND", seed=RANDOM_SEED + 1)
 
+for result in (results_india, results_poland):
+    dataset_name = result["dataset"]
+    confusion_matrix, same_length_count = build_same_length_confusion_matrix(result["pairs"])
 
-# wykresy
+    plot_confusion_matrix(
+        confusion_matrix,
+        os.path.join(RESULTS_DIR, f"confusion_matrix_{dataset_name}.png"),
+        f"Character confusion ({dataset_name}, same length only, n={same_length_count})",
+    )
+    plot_error_histogram(
+        result["pairs"],
+        os.path.join(RESULTS_DIR, f"error_count_hist_{dataset_name}.png"),
+        f"Edit distance per plate ({dataset_name})",
+    )
 
-plt.figure()
-plt.bar(["India", "Poland"], [acc_i, acc_p])
-plt.title("Accuracy comparison")
-plt.ylim(0, 1)
-plt.savefig(os.path.join(RESULTS_DIR, "accuracy_compare.png"))
+    result["same_length_subset"] = same_length_count
 
-plt.figure()
-plt.bar(["India", "Poland"], [cer_i, cer_p])
-plt.title("CER comparison")
-plt.savefig(os.path.join(RESULTS_DIR, "cer_compare.png"))
-
-print("\nSaved plots:")
-print("- accuracy_compare.png")
-print("- cer_compare.png")
+metrics_df = pd.DataFrame([results_india, results_poland])
+metrics_path = os.path.join(RESULTS_DIR, "ocr_metrics.csv")
+metrics_df.to_csv(metrics_path, index=False)

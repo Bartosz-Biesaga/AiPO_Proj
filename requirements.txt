@@ -6,4 +6,4 @@ torchvision
 pillow>=10.0.0
 pandas>=1.1.4
 matplotlib
-scikit-learn
+rapidfuzz
