@@ -4,9 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 from ultralytics import YOLO
-import easyocr
 import xml.etree.ElementTree as ET
-from sklearn.model_selection import train_test_split
+from main.recognition import load_model, process_license_plate
+from main.YOLO_utils import crop_boxes_from_image
+import random
 
 
 # https://www.kaggle.com/datasets/saisirishan/indian-vehicle-dataset/data?select=State-wise_OLX
@@ -17,7 +18,7 @@ from sklearn.model_selection import train_test_split
 # konfiguracja
 
 INDIAN_PATH = "test_datasets/indian_dataset"
-POLAND_PATH = "test_datasets/polish_dataset/photos"
+POLAND_PATH = "test_datasets/polish_dataset"
 
 YOLO_MODEL_PATH = "models/YOLO/weights/best.pt"
 
@@ -25,8 +26,16 @@ RESULTS_DIR = "test/results/text_recognition"
 
 MAX_IMAGES = 50
 
+RANDOM_SEED = 42
+
+def sample_dataset(data, max_images=MAX_IMAGES, seed=RANDOM_SEED):
+    data = list(data)
+    rng = random.Random(seed)
+    rng.shuffle(data)
+    return data[:max_images]
+
 yolo = YOLO(YOLO_MODEL_PATH)
-reader = easyocr.Reader(['en'], gpu=True)
+reader, _ = load_model()
 
 
 # XML parser
@@ -45,28 +54,6 @@ def parse_indian_xml(xml_path):
     return filename, gt
 
 
-def parse_poland_xml(xml_path):
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    # CVAT format: <image> nodes
-    for img in root.findall("image"):
-        filename = img.attrib["name"]
-
-        box = img.find("box")
-        if box is None:
-            continue
-
-        attr = box.find("attribute")
-        if attr is None:
-            continue
-
-        gt = attr.text.strip()
-        return filename, gt
-
-    return None
-
-
 # ładowanie datasetu
 
 def load_indian(dataset_path):
@@ -76,7 +63,7 @@ def load_indian(dataset_path):
             parsed = parse_indian_xml(os.path.join(dataset_path, file))
             if parsed:
                 img, gt = parsed
-                data.append((os.path.join(dataset_path, img), gt))
+                data.append((os.path.join(dataset_path, img), gt.strip().upper()))
     return data
 
 
@@ -101,7 +88,7 @@ def load_poland(dataset_path):
         gt = attr.text.strip()
 
         img_path = os.path.join(dataset_path, "photos", filename)
-        data.append((img_path, gt))
+        data.append((img_path, gt.strip().upper()))
 
     return data
 
@@ -133,46 +120,28 @@ def cer(gt, pred):
 
 # OCR 
 
-def run_eval(dataset, name="dataset"):
+def run_eval(dataset, name="dataset", seed=RANDOM_SEED):
     exact = 0
     cers = []
     total = 0
     char_conf = Counter()
 
-    for img_path, gt in dataset[:MAX_IMAGES]:
+    sampled = sample_dataset(dataset, MAX_IMAGES, seed)
+
+    for img_path, gt in sampled:
 
         img = cv2.imread(img_path)
         if img is None:
             continue
 
-        res = yolo.predict(img, verbose=False)[0]
-
-        best_box = None
-        best_conf = 0
-
-        if res.boxes is not None:
-            for box, conf, cls in zip(
-                res.boxes.xyxy.cpu().numpy(),
-                res.boxes.conf.cpu().numpy(),
-                res.boxes.cls.cpu().numpy()
-            ):
-                if conf > best_conf:
-                    best_conf = float(conf)
-                    best_box = box
-
-        if best_box is None:
-            pred = ""
-        else:
-            x1, y1, x2, y2 = best_box.astype(int)
-
-            h, w = img.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
-
-            crop = img[y1:y2, x1:x2]
-
-            ocr = reader.readtext(crop, detail=0)
-            pred = "".join(ocr).replace(" ", "").upper()
+        pairs = crop_boxes_from_image(yolo, img)
+        read_plates = []
+        for _, plate_imgs in pairs:
+            for plate_img in plate_imgs:
+                text = process_license_plate(image=plate_img, model=reader)
+                if text not in ("[BRAK ODCZYTU]", "[PROCESSING ERROR]"):
+                    read_plates.append(text)
+        pred = read_plates[0] if read_plates else ""
 
         total += 1
 

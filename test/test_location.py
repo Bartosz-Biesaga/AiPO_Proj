@@ -24,7 +24,7 @@ MAX_IMAGES = 300
 # klasa tablicy w wytrenowanym modelu
 LICENSE_PLATE_CLASS = 1
 
-IOU_THRESHOLD = 0.5
+IOU_THRESHOLD = 0.7
 
 model = YOLO(YOLO_MODEL_PATH)
 

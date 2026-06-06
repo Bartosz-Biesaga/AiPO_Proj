@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
 import easyocr
+import torch
 
 
-def load_model(langs=['en']):
-    reader = easyocr.Reader(langs, gpu=True)
+def load_model(langs=['en'], gpu=None):
+    if gpu is None:
+        gpu = torch.cuda.is_available()
+    reader = easyocr.Reader(langs, gpu=gpu)
     return reader, None
 
 
