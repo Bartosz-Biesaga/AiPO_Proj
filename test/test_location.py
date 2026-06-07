@@ -16,7 +16,7 @@ LABELS_DIR = "test_datasets/ufpr/test/labels"
 
 RESULTS_DIR = "test/results/location"
 
-MAX_IMAGES = 300
+MAX_IMAGES = -1 # all images
 
 LICENSE_PLATE_CLASS = 1
 
@@ -89,7 +89,7 @@ debug_samples = []
 
 img_names = sorted(os.listdir(IMAGES_DIR))[:MAX_IMAGES]
 
-for img_name in img_names:
+for i, img_name in enumerate(img_names):
     img_path = os.path.join(IMAGES_DIR, img_name)
     label_path = os.path.join(
         LABELS_DIR,
@@ -115,6 +115,8 @@ for img_name in img_names:
     best_box = None
     best_conf = 0.0
 
+    print(f"({i+1}/{len(img_names)})")
+    
     if result.boxes is not None:
         for box, conf, cls in zip(
             result.boxes.xyxy.cpu().numpy(),

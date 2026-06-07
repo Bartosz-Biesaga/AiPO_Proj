@@ -22,7 +22,7 @@ POLAND_PATH = "test_datasets/polish_dataset"
 YOLO_MODEL_PATH = "models/YOLO/weights/best.pt"
 RESULTS_DIR = "test/results/text_recognition"
 
-MAX_IMAGES = 50
+MAX_IMAGES = 1000
 RANDOM_SEED = 42
 
 yolo = YOLO(YOLO_MODEL_PATH)
@@ -55,12 +55,18 @@ def parse_indian_xml(xml_path):
 
 def load_indian(dataset_path):
     data = []
-    for file in os.listdir(dataset_path):
-        if file.endswith(".xml"):
-            parsed = parse_indian_xml(os.path.join(dataset_path, file))
-            if parsed:
-                img, gt = parsed
-                data.append((os.path.join(dataset_path, img), gt.strip().upper()))
+    for root_dir, _, files in os.walk(dataset_path):
+        for file in files:
+            if not file.endswith(".xml"):
+                continue
+            xml_path = os.path.join(root_dir, file)
+            parsed = parse_indian_xml(xml_path)
+            if not parsed:
+                continue
+            img_name, gt = parsed
+            img_path = os.path.join(root_dir, img_name)
+            if os.path.isfile(img_path):
+                data.append((img_path, gt.strip().upper()))
     return data
 
 
@@ -107,8 +113,7 @@ def build_same_length_confusion_matrix(pairs):
 
         subset_count += 1
         for g, p in zip(gt_n, pred_n):
-            if g != p:
-                confusion_matrix[(g, p)] += 1
+            confusion_matrix[(g, p)] += 1
 
     return confusion_matrix, subset_count
 
@@ -122,7 +127,7 @@ def plot_confusion_matrix(confusion_matrix, path, title):
         matrix[idx[g], idx[p]] = count
 
     fig, ax = plt.subplots(figsize=(max(8, len(chars) * 0.45), max(6, len(chars) * 0.45)))
-    im = ax.imshow(matrix, interpolation="nearest")
+    im = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
     ax.set_xticks(range(len(chars)))
     ax.set_yticks(range(len(chars)))
     ax.set_xticklabels(chars)
@@ -168,7 +173,9 @@ def run_eval(dataset, name="dataset", seed=RANDOM_SEED):
 
     sampled = sample_dataset(dataset, MAX_IMAGES, seed)
 
-    for img_path, gt in sampled:
+    for i, (img_path, gt) in enumerate(sampled):
+        print(f"({i+1}/{len(sampled)})")
+
         img = cv2.imread(img_path)
         if img is None:
             continue
@@ -248,5 +255,6 @@ for result in (results_india, results_poland):
     result["same_length_subset"] = same_length_count
 
 metrics_df = pd.DataFrame([results_india, results_poland])
+metrics_df.drop(columns=["pairs"], inplace=True)
 metrics_path = os.path.join(RESULTS_DIR, "ocr_metrics.csv")
 metrics_df.to_csv(metrics_path, index=False)

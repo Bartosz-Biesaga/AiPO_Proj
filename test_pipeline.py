@@ -43,7 +43,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
         pairs = crop_boxes_from_image(yolo_model, image)
 
         plates_found = False
-        read_plates = []
+        read_plates = set()
 
         # KROK 2: Odczyt (EasyOCR z heurystyką)
         for car_img, plate_imgs in pairs:
@@ -52,7 +52,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
                 read_text = process_license_plate(image=plate_img, model=reader)
 
                 if read_text != "[BRAK ODCZYTU]":
-                    read_plates.append(read_text)
+                    read_plates.add(read_text)
 
         print(f"Odczytano:  {', '.join(read_plates) if read_plates else '[BRAK ODCZYTU]'}")
 
@@ -81,7 +81,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
     print(f"Zgodne:       {correct_reads}")
     print(f"Błędy YOLO:   {yolo_errors}")
     print(f"Błędy OCR:    {ocr_errors}")
-    print(f"Błędne łącznie:{total_images - correct_reads}")
+    print(f"Błędne łącznie: {total_images - correct_reads}")
     if total_images > 0:
         print(f"SKUTECZNOŚĆ: {(correct_reads / total_images) * 100:.2f}%")
     print("=" * 60)
