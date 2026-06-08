@@ -21,6 +21,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
     total_images = 0
     correct_reads = 0
     yolo_errors = 0
+    ocr_errors = 0
 
     for image_name in os.listdir(source_dir):
         if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -42,7 +43,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
         pairs = crop_boxes_from_image(yolo_model, image)
 
         plates_found = False
-        read_plates = []
+        read_plates = set()
 
         # KROK 2: Odczyt (EasyOCR z heurystyką)
         for car_img, plate_imgs in pairs:
@@ -51,12 +52,13 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
                 read_text = process_license_plate(image=plate_img, model=reader)
 
                 if read_text != "[BRAK ODCZYTU]":
-                    read_plates.append(read_text)
+                    read_plates.add(read_text)
 
         print(f"Odczytano:  {', '.join(read_plates) if read_plates else '[BRAK ODCZYTU]'}")
 
         # KROK 3: Walidacja i sortowanie
-        read_success = all(expected in read_plates for expected in expected_plates)
+        read_success = (len(read_plates) == len(expected_plates) 
+                        and all(expected in read_plates for expected in expected_plates))
 
         if read_success:
             print("-> WYNIK: ZGODNY (/correct)")
@@ -68,6 +70,7 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
                 yolo_errors += 1
             else:
                 print("-> WYNIK: BŁĄD ODCZYTU (/incorrect)")
+                ocr_errors += 1
             shutil.move(image_path, os.path.join(incorrect_dir, image_name))
 
         print("-" * 60)
@@ -75,8 +78,10 @@ def run_tests_and_sort(source_dir, correct_dir, incorrect_dir):
     print("=" * 60)
     print("PODSUMOWANIE TESTU I SORTOWANIA:")
     print(f"Zdjęć:      {total_images}")
-    print(f"Zgodne:     {correct_reads}")
-    print(f"Błędne:     {total_images - correct_reads}")
+    print(f"Zgodne:       {correct_reads}")
+    print(f"Błędy YOLO:   {yolo_errors}")
+    print(f"Błędy OCR:    {ocr_errors}")
+    print(f"Błędne łącznie: {total_images - correct_reads}")
     if total_images > 0:
         print(f"SKUTECZNOŚĆ: {(correct_reads / total_images) * 100:.2f}%")
     print("=" * 60)

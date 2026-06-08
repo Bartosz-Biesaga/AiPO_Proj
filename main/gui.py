@@ -7,6 +7,7 @@ from PIL import Image, ImageTk
 from ultralytics import YOLO
 from YOLO_utils import crop_boxes_from_image
 from recognition import load_model, process_license_plate
+import shutil
 
 
 class App:
@@ -177,6 +178,11 @@ class App:
         if not self.detections or self.current_car_index >= len(self.detections):
             return
 
+        self.plate_text_box.config(state=tk.NORMAL)
+        self.plate_text_box.delete("1.0", tk.END)
+        self.plate_text_box.config(state=tk.DISABLED)
+        self.save_button.config(state=tk.DISABLED)
+
         car, plates = self.detections[self.current_car_index]
 
         # Wyświetlamy samą tablicę zamiast całego auta, żeby można było zweryfikować jakość wycięcia
@@ -230,8 +236,6 @@ class App:
         if not self.detections or self.current_car_index >= len(self.detections):
             return
 
-        import shutil  # Upewnij się, że biblioteka jest zaimportowana
-
         # 1. Pobranie nazwy oryginalnego pliku (np. "auto1" z "C:/obrazy/auto1.jpg")
         base_filename = os.path.splitext(os.path.basename(self.image_path))[0]
 
@@ -244,13 +248,13 @@ class App:
         # 3. Zapis wyciętego auta
         if car is not None:
             car_path = os.path.join(save_dir, f"{base_filename}_car_{self.current_car_index}.jpg")
-            cv2.imwrite(car_path, cv2.cvtColor(car, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(car_path, car)
 
         # 4. Zapis wyciętej tablicy (jeśli istnieje)
         if plates:
             plate_img = plates[0]
             plate_path = os.path.join(save_dir, f"{base_filename}_plate_{self.current_car_index}.jpg")
-            cv2.imwrite(plate_path, cv2.cvtColor(plate_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(plate_path, plate_img)
 
         # 5. Zapis rozpoznanego tekstu
         plate_text = self.plate_text_box.get("1.0", tk.END).strip()

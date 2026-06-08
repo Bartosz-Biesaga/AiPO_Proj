@@ -51,7 +51,12 @@ python3 main/gui.py
 │       └── weights/
 │           └── best.pt    # Best trained weights for vehicle/plate detection
 ├── results/               # Destination folder for saved outputs (cropped images, text files)
+├── test/                  # Evaluation scripts and generated test reports
+│   ├── test_location.py   # YOLO plate detection metrics (IoU, confidence) on UFPR dataset
+│   ├── text_recognition_test.py  # OCR accuracy/CER evaluation on Indian and Polish datasets
+│   └── results/           # Plots and CSV metrics produced by the test scripts
 ├── test_data/             # Sample images used for testing the application
+├── test_datasets/         # External benchmark datasets (ufpr, indian_dataset, polish_dataset)
 ├── .gitignore             # Git ignore file
 ├── README.md              # Project description and manual
 └── requirements.txt       # Unified dependencies list (ultralytics, easyocr, etc.)

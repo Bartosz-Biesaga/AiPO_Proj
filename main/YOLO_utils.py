@@ -1,11 +1,10 @@
 import cv2
 import numpy as np
 import os
-import torch
 from ultralytics import YOLO
 
 
-def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.25, iou=0.7, save_prediction=False):
+def crop_boxes_from_image(yolo, image, confidence=0.25, iou=0.7, save_prediction=False):
     result = yolo(image, conf=confidence, iou=iou, verbose=False)[0]
 
     if save_prediction is True:
@@ -22,7 +21,7 @@ def crop_boxes_from_image(yolo, image, license_plate_car_ioa=0.85, confidence=0.
 
         if int(cls) == 0:  # Auto
             cars.append({"img": image[y1:y2, x1:x2], "box": [x1, y1, x2, y2]})
-        else:  # Tablica
+        else:  # Tablica -- yolo rozpoznaje jedynie auta i tablice
             w, h = x2 - x1, y2 - y1
 
             pad_x = int(w * 0.06)

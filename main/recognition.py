@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
 import easyocr
+import torch
 
 
-def load_model(langs=['en']):
-    reader = easyocr.Reader(langs, gpu=True)
+def load_model(langs=['en'], gpu=None):
+    if gpu is None:
+        gpu = torch.cuda.is_available()
+    reader = easyocr.Reader(langs, gpu=gpu)
     return reader, None
 
 
@@ -57,15 +60,6 @@ def process_license_plate(image_path=None, image=None, model=None, **kwargs):
 
         valid_boxes.sort(key=lambda b: b["cx"])
         best_text = "".join([b["text"] for b in valid_boxes])
-
-        if len(best_text) > 7:
-            if best_text.startswith("1") or best_text.startswith("I"):
-                best_text = best_text[1:]
-            if best_text.endswith("1") or best_text.endswith("I"):
-                best_text = best_text[:-1]
-
-        if len(best_text) < 3:
-            return "[BRAK ODCZYTU]"
 
         return best_text
 
